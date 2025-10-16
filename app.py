@@ -3,10 +3,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-# ---------------- App config ----------------
 st.set_page_config(page_title="GDP Explorer (2020–2025)", layout="wide")
 
-# ---------------- Helpers ----------------
 @st.cache_data
 def load_csv(path_or_buffer):
     df = pd.read_csv(path_or_buffer)
@@ -54,10 +52,9 @@ def annual_growth_series(row):
             growth.append((b - a) / a * 100.0)
     return growth
 
-# ---------------- Sidebar: data input ----------------
 st.sidebar.header("Data")
 uploaded = st.sidebar.file_uploader("Upload CSV (Country, 2020..2025)", type=["csv"])
-default_path = "2020-2025.csv"  # optional: put your file in the repo root with this name
+default_path = "2020-2025.csv"  
 
 df = None
 if uploaded is not None:
@@ -75,7 +72,6 @@ if df.empty or "Country" not in df.columns:
 
 year_cols = get_year_cols(df)
 
-# Enrich with latest snapshot + metrics
 latest = df.apply(lambda r: latest_value(r, year_cols), axis=1, result_type="expand")
 df["LatestGDP"] = latest[0]
 df["LatestYear"] = latest[1]
@@ -83,9 +79,8 @@ df["Pct_2020_2021"] = df.apply(lambda r: pct_change(r.get("2020"), r.get("2021")
 df["Pct_2020_2022"] = df.apply(lambda r: pct_change(r.get("2020"), r.get("2022")), axis=1) if set(["2020","2022"]).issubset(df.columns) else np.nan
 df["CAGR_2020_2025"] = df.apply(lambda r: cagr(r.get("2020"), r.get("2025"), 5), axis=1) if set(["2020","2025"]).issubset(df.columns) else np.nan
 
-# ---------------- Header & KPIs ----------------
 st.title("GDP Explorer (2020–2025)")
-top_n = st.sidebar.slider("Top-N major economies (by latest GDP)", 10, 40, 20, 5)
+top_n = st.sidebar.slider("Top-N major economies (by latest GDP)", 10, 40, 20, 10)
 
 n_countries = int(df["Country"].nunique())
 common_latest_year = (df["LatestYear"].mode().iat[0] if df["LatestYear"].dropna().size else "—")
@@ -107,12 +102,10 @@ c3.metric("Top by latest GDP", f"{top_country}", help=f"Year: {top_gdp_year}, Va
 c4.metric("Highest CAGR (2020–2025)", f"{highest_cagr_country}",
           help=(f"{highest_cagr:.2f}%" if pd.notna(highest_cagr) else "—"))
 
-# ---------------- Tabs ----------------
 tab_overview, tab_map, tab_compare, tab_surprise, tab_table = st.tabs(
     ["Overview", "World Map", "Compare Countries", "Surprising Growers", "Data Table"]
 )
 
-# ===== Overview =====
 with tab_overview:
     st.subheader("Preview")
     st.dataframe(df[["Country"] + year_cols].head(30), use_container_width=True)
@@ -129,7 +122,6 @@ with tab_overview:
     else:
         st.info("Need both 2020 and 2021 columns with values to show this chart.")
 
-# ===== World Map =====
 with tab_map:
     st.subheader("Choropleth map")
     # Choose a year present in the file
@@ -155,7 +147,6 @@ with tab_map:
     else:
         st.warning(f"Column '{map_year_str}' not found in the CSV.")
 
-# ===== Compare Countries =====
 with tab_compare:
     st.subheader("Compare countries over time")
     options = sorted(df["Country"].dropna().unique().tolist())
@@ -171,7 +162,6 @@ with tab_compare:
     else:
         st.info("Pick at least one country to compare.")
 
-# ===== Surprising Growers =====
 with tab_surprise:
     st.subheader("Surprising growers: CAGR vs Volatility")
     base_top_n = st.number_input("Exclude Top-N by 2020 GDP", min_value=10, max_value=60, value=20, step=5)
@@ -188,7 +178,7 @@ with tab_surprise:
             threshold = np.nanpercentile(valid_cagrs, percentile)
             surprising = candidates[candidates["CAGR_2020_2025"] >= threshold].copy()
 
-            # volatility
+        
             def series_growth(row):
                 vals = [row.get(str(y), np.nan) for y in map(int, year_cols)]
                 growth = []
@@ -219,7 +209,6 @@ with tab_surprise:
     else:
         st.info("Need both 2020 and 2025 columns to compute CAGR-based surprises.")
 
-# ===== Data Table (search & filters) =====
 with tab_table:
     st.subheader("Data table with search & filters")
     long_df_all = to_long(df, year_cols).dropna()
