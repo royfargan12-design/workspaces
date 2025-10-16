@@ -1,3 +1,4 @@
+from pathlib import Path
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,19 +6,45 @@ import plotly.express as px
 
 st.set_page_config(page_title="GDP Explorer (2020–2025)", layout="wide")
 
+APP_DIR = Path(__file__).parent
+DEFAULT_CSV_PATH = APP_DIR / "2020-2025.csv"
+
 @st.cache_data
 def load_csv(path_or_buffer):
     df = pd.read_csv(path_or_buffer)
-    # Ensure numeric year cols
+    df.columns = [str(c).strip() for c in df.columns]
     if "Country" not in df.columns:
         raise ValueError("CSV must include a 'Country' column.")
-    year_cols = [c for c in df.columns if c != "Country"]
+    year_cols = [c for c in df.columns if str(c).strip().isdigit()]
     for c in year_cols:
+        df[c] = (df[c].astype(str)
+                        .str.replace(",", "", regex=False)
+                        .str.replace("$", "", regex=False)
+                        .str.strip())
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["Country"] = df["Country"].astype(str).str.strip()
     return df
 
+st.sidebar.header("Data")
+uploaded = st.sidebar.file_uploader("Upload CSV (Country, 2020..2025)", type=["csv"])
+
+if uploaded is not None:
+    DEFAULT_CSV_PATH.write_bytes(uploaded.getvalue())
+    st.sidebar.success(f"Saved as default: {DEFAULT_CSV_PATH.name}")
+
+df = None
+if DEFAULT_CSV_PATH.exists():
+    df = load_csv(DEFAULT_CSV_PATH)
+    st.sidebar.info(f"Using default file: {DEFAULT_CSV_PATH.name}")
+else:
+    st.sidebar.warning("Default file not found. Please upload a CSV.")
+    df = pd.DataFrame(columns=["Country","2020","2021","2022","2023","2024","2025"])
+
+if df.empty or "Country" not in df.columns:
+    st.stop()
+
 def get_year_cols(df):
-    return sorted([c for c in df.columns if c != "Country"], key=lambda x: int(x))
+    return sorted([c for c in df.columns if str(c).strip().isdigit()], key=lambda x: int(x))
 
 def latest_value(row, year_cols):
     for y in sorted(year_cols, key=int, reverse=True):
@@ -41,34 +68,6 @@ def to_long(df, year_cols):
     )
     long_df["Year"] = pd.to_numeric(long_df["Year"], errors="coerce")
     return long_df
-
-def annual_growth_series(row):
-    ys = [int(y) for y in get_year_cols(row.to_frame().T)]
-    vals = [row.get(str(y), np.nan) for y in ys]
-    growth = []
-    for i in range(1, len(vals)):
-        a, b = vals[i-1], vals[i]
-        if pd.notna(a) and pd.notna(b) and a > 0:
-            growth.append((b - a) / a * 100.0)
-    return growth
-
-st.sidebar.header("Data")
-uploaded = st.sidebar.file_uploader("Upload CSV (Country, 2020..2025)", type=["csv"])
-default_path = "2020-2025.csv"  
-
-df = None
-if uploaded is not None:
-    df = load_csv(uploaded)
-else:
-    try:
-        df = load_csv(default_path)
-        st.sidebar.info(f"Using default file: {default_path}")
-    except Exception:
-        st.sidebar.warning("No file uploaded and default file not found. Please upload a CSV.")
-        df = pd.DataFrame(columns=["Country","2020","2021","2022","2023","2024","2025"])
-
-if df.empty or "Country" not in df.columns:
-    st.stop()
 
 year_cols = get_year_cols(df)
 
@@ -124,7 +123,6 @@ with tab_overview:
 
 with tab_map:
     st.subheader("Choropleth map")
-    # Choose a year present in the file
     y_min, y_max = int(min(map(int, year_cols))), int(max(map(int, year_cols)))
     map_year = st.slider("Map year", min_value=y_min, max_value=y_max, value=min(max(2021, y_min), y_max))
     map_year_str = str(map_year)
@@ -178,7 +176,6 @@ with tab_surprise:
             threshold = np.nanpercentile(valid_cagrs, percentile)
             surprising = candidates[candidates["CAGR_2020_2025"] >= threshold].copy()
 
-        
             def series_growth(row):
                 vals = [row.get(str(y), np.nan) for y in map(int, year_cols)]
                 growth = []
@@ -231,3 +228,4 @@ with tab_table:
     st.download_button("Download CSV", tbl.to_csv(index=False).encode("utf-8"), "filtered_gdp.csv", "text/csv")
 
 st.caption("Tip: for GDP per capita, add a population CSV (Country, 2020..2025) and divide on the fly.")
+
